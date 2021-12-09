@@ -82,7 +82,7 @@ class CS249Agent(Agent):
         self.avoid_right_steer = 0.5
 
         self.obstacle_avoid_starting_coord: Optional[Location] = None
-        self.avoid_max_dist = 0.4
+        self.avoid_max_dist = 0.5
         self.bypass_dist_dist = 0.6
         self.recover_max_dist = 0.4
 
