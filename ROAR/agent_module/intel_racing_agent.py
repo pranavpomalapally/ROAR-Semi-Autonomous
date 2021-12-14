@@ -4,29 +4,15 @@ from ROAR.utilities_module.vehicle_models import Vehicle, VehicleControl
 from ROAR.configurations.configuration import Configuration as AgentConfig
 import cv2
 import numpy as np
-# from ROAR.control_module.simple_pid_controller import SimplePIDController
-from ROAR.control_module.real_world_image_based_pid_controller import \
-    RealWorldImageBasedPIDController as LaneFollowingPID
+from ROAR.control_module.intel_racing_pid_controller import IntelRacingPIDController as LaneFollowingPID
 from collections import deque
 from typing import List, Tuple, Optional
-from ROAR.utilities_module.udp_multicast_communicator import UDPMulticastCommunicator
-from ROAR.control_module.udp_pid_controller import UDP_PID_CONTROLLER
+
 from ROAR.perception_module.depth_to_pointcloud_detector import DepthToPointCloudDetector
 import open3d as o3d
 import math
 from enum import Enum
 
-
-class IntelRacingAgentModes(Enum):
-    NORMAL = 1
-    OBSTACLE_AVOID = 2
-    OBSTACLE_RECOVER = 3
-    OBSTACLE_BYPASS = 4
-
-
-class ObstacleEnum(Enum):
-    LEFT = 1
-    RIGHT = 2
 
 
 class IntelRacingAgent(Agent):
@@ -278,9 +264,9 @@ class IntelRacingAgent(Agent):
 
     def lead_car_step(self):
         if self.front_depth_camera.data is not None and self.front_rgb_camera.data is not None:
-            left, center, right = self.find_obstacles_via_depth_to_pcd(debug=True)
-            if left[0] or center[0] or right[0]:
-                return VehicleControl(brake=True)
+            # left, center, right = self.find_obstacles_via_depth_to_pcd(debug=True)
+            # if left[0] or center[0] or right[0]:
+            #     return VehicleControl(brake=True)
             error = self.find_error()
             if error is None:
                 return self.no_line_seen()
