@@ -16,11 +16,13 @@ class IntelRacingPIDController(Controller):
         self.long_error_deque_length = 50
         self.lat_error_deque_length = 10
         self.lat_error_queue = deque(
-            maxlen=self.lat_error_deque_length)  # this is how much error you want to accumulate
+            maxlen=self.lat_error_deque_length)  # how much error you want to accumulate
         self.long_error_queue = deque(
-            maxlen=self.long_error_deque_length)  # this is how much error you want to accumulate
-        self.target_speed = 7  # m / s
-        self.max_throttle = 0.15
+            maxlen=self.long_error_deque_length)  # how much error you want to accumulate
+        
+        self.target_speed = 7  # target speed that you want to pursue at. m / s
+        
+        self.max_throttle = 0.15 # local max throttle that the vehicle can reach. 
         self.curr_max_throttle = self.max_throttle
         self.config = json.load(Path(self.agent.agent_settings.pid_config_file_path).open('r'))
         self.long_config = self.config["longitudinal_controller"]
@@ -73,15 +75,20 @@ class IntelRacingPIDController(Controller):
         # print(e_p, e_d, e_i, e_incline, total_error)
 
         if sum(self.long_error_queue) >= self.target_speed * (self.long_error_deque_length - 1):
+            # if i have filled integral buffer with maximum amount of error, 
+            # this probably means that i am unable to move forward with the given throttle
+            # therefore, gradually increase the allowable throttle
             self.curr_max_throttle += 0.001
         else:
             self.curr_max_throttle = self.max_throttle
 
         if incline > 10:
+            # if up ramp, execute a relatively big forward throttle to enable the vehicle to go forward
             self.curr_max_throttle = max(self.curr_max_throttle, 0.26)
         long_control = float(np.clip(total_error, -self.curr_max_throttle, self.curr_max_throttle))
 
         if incline < -10:
+            # if downslope, execute a constant reverse throttle to counter the downward force
             p = -0.1
             self.logger.info(f"USING DOWNHILL CONSTANT P = {p} CONTROLLER")
             long_control = p
