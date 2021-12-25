@@ -1,0 +1,16 @@
+{
+  "longitudinal_controller": {
+    "10": {
+          "Kp": 0.04,
+          "Kd": 0,
+          "Ki": 0.0005
+    }
+  },
+  "latitudinal_controller": {
+    "6": {
+      "Kp": 1,
+      "Kd": 0,
+      "Ki": 0
+    }
+  }
+}

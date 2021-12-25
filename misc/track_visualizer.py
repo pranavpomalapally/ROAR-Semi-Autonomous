@@ -26,7 +26,6 @@ def read_txt(file_path: Path) -> List[List[float]]:
             x, y, z = line.split(sep=',')
         except Exception as e:
             x, y, z, roll, pitch, yaw = line.split(sep=',')
-
         result.append([float(x), float(y), float(z)])
     return result
 
@@ -40,7 +39,7 @@ def visualize_track_data(track_data: List[List[float]], file_name:Optional[Path]
     Ys = track_data[:, 1]
     Zs = track_data[:, 2]
 
-    fig = make_subplots(rows=3, cols=2, subplot_titles=["Xs","X vs Y", "Ys", "Y vs Z", "Zs", "X vs Z"])
+    fig = make_subplots(rows=3, cols=2, subplot_titles=["Xs", "Y vs Z", "Ys", "X vs Z", "Zs", "X vs Z"])
     fig.update_layout(
         title=f"Data file path: {file_name.as_posix()}"
     )
@@ -138,7 +137,7 @@ def visualize_tracks_together(data_dir: Path = Path("../ROAR_Gym/data"), width: 
 
 
 if __name__ == "__main__":
-    file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/ROAR_iOS/data/transforms_6_19_orig_1.txt")
+    file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/transforms.txt")
     track_data: List[List[float]] = read_txt(file_name)
     # track_data = swapCols(track_data)
     # save(track_data)

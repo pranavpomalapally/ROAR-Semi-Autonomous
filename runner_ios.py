@@ -6,6 +6,7 @@ from ROAR_iOS.config_model import iOSConfig
 from ROAR_Unity.unity_runner import iOSUnityRunner
 from ROAR.agent_module.forward_only_agent import ForwardOnlyAgent
 from ROAR.agent_module.intel_racing_agent import IntelRacingAgent
+from ROAR.agent_module.auto_lw_agent import AutoLaneFollowingWithWaypointAgent
 from ROAR.utilities_module.vehicle_models import Vehicle
 import logging
 import argparse
