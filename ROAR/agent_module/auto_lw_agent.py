@@ -10,7 +10,8 @@ from enum import Enum
 from typing import Optional, List, Tuple
 from collections import deque
 from ROAR.control_module.intel_racing_pid_controller import IntelRacingImagePIDController as ImageBasedPIDController
-from ROAR.control_module.intel_racing_pid_controller import IntelRacingWaypointPIDController as WaypointBasedPIDController
+from ROAR.control_module.intel_racing_pid_controller import \
+    IntelRacingWaypointPIDController as WaypointBasedPIDController
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
@@ -49,14 +50,23 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.curr_waypoint_index = 0
         self.closeness_threshold = 0.2
 
+        # debug waypoint following
+        f = Path("transforms_3.txt").open('r')
+        for line in f.readlines():
+            x, y, z = line.split(",")
+            l = Location(x=x, y=y, z=z)
+            self.waypoints.append(Transform(location=l))
+        self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
         if self.front_rgb_camera.data is not None and self.front_depth_camera.data is not None:
             self.prev_steerings.append(self.vehicle.control.steering)
+
             if self.mode == AutoLWAgentModes.STOP_INIT:
                 return self.on_STOP_INIT_step()
             elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
-                return self.on_LANE_FOLLOWING_step()
+                return self.on_LANE_FOLLOWING_step(debug=False)
             elif self.mode == AutoLWAgentModes.STOP_MID:
                 return self.on_STOP_MID_step()
             elif self.mode == AutoLWAgentModes.VISUALIZE_TRACK:
@@ -78,7 +88,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             self.start_loc = self.vehicle.transform
         return VehicleControl()
 
-    def on_LANE_FOLLOWING_step(self):
+    def on_LANE_FOLLOWING_step(self, debug=False):
         self.logger.info("LANE_FOLLOWING step")
         error = self.find_error()
         control = VehicleControl()
@@ -105,23 +115,35 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                 self.logger.info("LANE_FOLLOWING step -> moved outside of the initial location. "
                                  "Executing Lane Following")
                 self.has_exited_start_loc = True
+        if debug and self.time_counter > 200:
+            self.mode = AutoLWAgentModes.STOP_MID
+            control = VehicleControl(brake=True, throttle=0, steering=0)
         return control
 
     def on_STOP_MID_step(self):
         self.logger.info("STOP MID step")
+        self.logger.info("Request sent")
         r = requests.get(f"http://{self.ip_addr}:40001/save_world")
-        if r.text == "200":
+        if r.status_code == 200:
             self.on_VISUALIZE_TRACK_step()
         else:
+            # go back to lane following
             self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
                                                         "iOS_image_pid_config.json").as_posix()
             self.controller = ImageBasedPIDController(agent=self)
-            self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+            self.mode = AutoLWAgentModes.LANE_FOLLOWING
         return VehicleControl()
 
     def on_VISUALIZE_TRACK_step(self):
         self.logger.info("VISUALIZE_TRACK step")
+        # take only coordinates that are valid (not initial values) by taking advantage of vehicle height
+        self.transform_history = [t for t in self.transform_history if abs(t.location.y) > 0.00001]
+
         data = [t.location.to_array() for t in self.transform_history]
+        transform_file = Path("transforms.txt").open('w+')
+        for d in self.transform_history:
+            transform_file.write(d.location.to_string() + "\n")
+        self.logger.info("File written to transforms.txt")
         self.visualize_track_data(track_data=data)
         self.waypoints = [t for t in self.transform_history]
         self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
@@ -276,7 +298,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # mask_yellow = cv2.inRange(src=data, lowerb=(0, 130, 0), upperb=(250, 200, 110)) # TERRACE YELLOW
         # mask_red = cv2.inRange(src=data, lowerb=(0, 180, 60), upperb=(250, 240, 140))  # CORY 337 RED
         # mask_yellow = cv2.inRange(src=data, lowerb=(0, 140, 0), upperb=(250, 200, 80))  # CORY 337 YELLOW
-        mask_blue = cv2.inRange(src=data, lowerb=(70, 80, 120), upperb=(170, 135, 255))  # SHUWEI BLUE
+        mask_blue = cv2.inRange(src=data, lowerb=(60, 70, 120), upperb=(170, 130, 255))  # SHUWEI BLUE
         mask = mask_blue
         # mask = mask_red | mask_yellow
 

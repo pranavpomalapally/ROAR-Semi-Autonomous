@@ -4,7 +4,7 @@ from ROAR.utilities_module.vehicle_models import Vehicle, VehicleControl
 from ROAR.configurations.configuration import Configuration as AgentConfig
 import cv2
 import numpy as np
-from ROAR.control_module.intel_racing_pid_controller import IntelRacingPIDController as LaneFollowingPID
+from ROAR.control_module.intel_racing_pid_controller import IntelRacingImagePIDController as LaneFollowingPID
 from collections import deque
 from typing import List, Tuple, Optional
 

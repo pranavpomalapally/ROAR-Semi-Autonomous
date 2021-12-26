@@ -159,7 +159,7 @@ class IntelRacingWaypointPIDController(Controller):
             _de = 0.0
             _ie = 0.0
 
-        k_p, k_d, k_i = self.find_k_values(config=self.config, vehicle=self.agent.vehicle)
+        k_p, k_d, k_i = self.find_k_values(config=self.lat_config, vehicle=self.agent.vehicle)
 
         lat_control = float(
             np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1)

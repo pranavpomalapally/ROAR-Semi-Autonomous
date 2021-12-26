@@ -131,17 +131,17 @@ def visualize_tracks_together(data_dir: Path = Path("../ROAR_Gym/data"), width: 
     ax1 = fig.add_subplot(111)
     for name, track in tracks.items():
         track = np.array(track)
-        ax1.scatter(track[:, 0], track[:, 1], s=10, marker="s", label=name)
+        ax1.scatter(track[:, 0], track[:, 2], s=10, marker="s", label=name)
     plt.legend(loc='upper left')
     plt.show()
 
 
 if __name__ == "__main__":
-    file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/transforms.txt")
-    track_data: List[List[float]] = read_txt(file_name)
+    # file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/transforms.txt")
+    # track_data: List[List[float]] = read_txt(file_name)
     # track_data = swapCols(track_data)
     # save(track_data)
 
-    visualize_track_data(track_data=track_data, file_name=file_name)
+    # visualize_track_data(track_data=track_data, file_name=file_name)
     # visualize_tracks(regex="trajectory_log*")
-    # visualize_tracks_together(data_dir=Path("../data/output/transform"), regex="08*.txt")
+    visualize_tracks_together(data_dir=Path("../"), regex="transforms*.txt")
