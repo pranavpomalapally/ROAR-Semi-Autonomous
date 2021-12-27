@@ -52,11 +52,28 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
 
         # debug waypoint following
         f = Path("transforms_3.txt").open('r')
+        waypoints_arr = []
         for line in f.readlines():
             x, y, z = line.split(",")
+            x, y, z = float(x), float(y), float(z)
             l = Location(x=x, y=y, z=z)
             self.waypoints.append(Transform(location=l))
+            waypoints_arr.append([x, z])
+        waypoints_arr = np.array(waypoints_arr)
         self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+
+        buffer = 10
+        x_scale = 20
+        y_scale = 20
+
+        x_offset = abs(min(waypoints_arr[:, 0]))
+        y_offset = abs(min(waypoints_arr[:, 1]))
+
+        width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
+        height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
+        self.map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
+                       x_width=width, y_height=height, buffer=buffer)
+        self.map.update(waypoints_arr)
 
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
@@ -155,20 +172,32 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
     def on_WAYPOINT_FOLLOWING_step(self):
         self.logger.info("WAYPOINT_FOLLOWING step")
         control = VehicleControl()
+
+        self.waypoint_visualize()
         # find next waypoint
-        next_waypoint, index = self.find_next_waypoint(waypoints_queue=self.waypoints,
-                                                       curr_index=self.curr_waypoint_index,
-                                                       curr_transform=self.vehicle.transform,
-                                                       closeness_threshold=self.closeness_threshold)
-        self.curr_waypoint_index = index
-        # waypoint based pid
-        control = self.controller.run_in_series(next_waypoint=next_waypoint)
+        # next_waypoint, index = self.find_next_waypoint(waypoints_queue=self.waypoints,
+        #                                                curr_index=self.curr_waypoint_index,
+        #                                                curr_transform=self.vehicle.transform,
+        #                                                closeness_threshold=self.closeness_threshold)
+        # self.curr_waypoint_index = index
+        # # waypoint based pid
+        # control = self.controller.run_in_series(next_waypoint=next_waypoint)
         return control
 
     def on_STOP_END_step(self):
         self.logger.info("STOP END step")
 
         return VehicleControl()
+
+    def waypoint_visualize(self, with_car: bool = True):
+        track_map = self.map.map.copy()
+        m = np.zeros(shape=(track_map.shape[0], track_map.shape[1], 3))
+        m[np.where(track_map > 0.9)] = [255, 255, 255]
+        if with_car:
+            coord = self.map.world_loc_to_occu_map_coord(self.vehicle.transform.location)
+            m[coord[1]-2:coord[1]+2, coord[0]-2:coord[0]+2] = [0, 0, 255]
+        cv2.imshow("m", m)
+        cv2.waitKey(1)
 
     @staticmethod
     def find_next_waypoint(waypoints_queue: List[Transform], curr_index, curr_transform: Transform,
@@ -365,3 +394,61 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         else:
             # is flat or up slope, execute adjusted previous command
             return self.execute_prev_command()
+
+
+class Map:
+    def __init__(self,
+                 x_offset: float, y_offset: float, x_scale: float, y_scale: float,
+                 x_width: int = 5000, y_height: int = 5000, buffer: int = 100,
+                 name: str = "map"
+                 ):
+        self.name = name
+        self.x_offset = x_offset
+        self.y_offset = y_offset
+        self.x_scale = x_scale
+        self.y_scale = y_scale
+        self.x_width = x_width
+        self.y_height = y_height
+        self.buffer = buffer
+        self.map = np.zeros(shape=(self.y_height, self.x_width))
+
+    def world_loc_to_occu_map_coord(self, loc: Location) -> Tuple[int, int]:
+        """
+        Takes in a coordinate in the world reference frame and transform it into the occupancy map coordinate by
+        applying the equation
+        `int( (WORLD + OFFSET ) * SCALE)`
+
+        Args:
+            loc:
+
+        Returns:
+
+        """
+        x = int((loc.x + self.x_offset) * self.x_scale) + self.buffer
+        y = int((loc.z + self.y_offset) * self.y_scale) + self.buffer
+        return x, y
+
+    def world_arr_to_occu_map(self, arr: np.ndarray) -> np.ndarray:
+        xs = ((arr[:, 0] + self.x_offset) * self.x_scale + self.buffer).astype(int)
+        ys = ((arr[:, 1] + self.y_offset) * self.y_scale + self.buffer).astype(int)
+        return np.array([xs, ys]).T
+
+    def update(self, points: np.ndarray, val=1) -> int:
+        """
+
+        Args:
+            val: value to update those points to
+            points: points is a 2D numpy array consist of X and Z coordinates
+
+        Returns:
+            number of points updated
+        """
+        points = self.world_arr_to_occu_map(points)
+        self.map[points[:, 1], points[:, 0]] = val
+        return len(points)
+
+    def visualize(self, dsize: Optional[Tuple] = None):
+        img = self.map.copy()
+        if dsize:
+            img = cv2.resize(img, dsize=dsize)
+        cv2.imshow(self.name, img)

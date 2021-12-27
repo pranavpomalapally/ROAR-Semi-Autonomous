@@ -137,11 +137,11 @@ def visualize_tracks_together(data_dir: Path = Path("../ROAR_Gym/data"), width: 
 
 
 if __name__ == "__main__":
-    # file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/transforms.txt")
-    # track_data: List[List[float]] = read_txt(file_name)
+    file_name = Path("/Users/michaelwu/Desktop/projects/ROAR/transforms_2.txt")
+    track_data: List[List[float]] = read_txt(file_name)
     # track_data = swapCols(track_data)
     # save(track_data)
 
-    # visualize_track_data(track_data=track_data, file_name=file_name)
+    visualize_track_data(track_data=track_data, file_name=file_name)
     # visualize_tracks(regex="trajectory_log*")
-    visualize_tracks_together(data_dir=Path("../"), regex="transforms*.txt")
+    # visualize_tracks_together(data_dir=Path("../"), regex="transforms*.txt")
