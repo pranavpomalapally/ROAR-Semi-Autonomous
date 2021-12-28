@@ -129,9 +129,9 @@ class IntelRacingWaypointPIDController(Controller):
     def lateral_pid_control(self, next_waypoint:Transform) -> float:
         # calculate a vector that represent where you are going
         v_begin = self.agent.vehicle.transform.location.to_array()
-        direction_vector = np.array([-np.sin(np.deg2rad(self.agent.vehicle.transform.rotation.yaw)),
+        direction_vector = np.array([-np.sin(-np.deg2rad(self.agent.vehicle.transform.rotation.yaw)),
                                      0,
-                                     -np.cos(np.deg2rad(self.agent.vehicle.transform.rotation.yaw))])
+                                     -np.cos(-np.deg2rad(self.agent.vehicle.transform.rotation.yaw))])
         v_end = v_begin + direction_vector
 
         v_vec = np.array([(v_end[0] - v_begin[0]), 0, (v_end[2] - v_begin[2])])
@@ -148,7 +148,6 @@ class IntelRacingWaypointPIDController(Controller):
         w_vec_normed = w_vec / np.linalg.norm(w_vec)
         error = np.arccos(v_vec_normed @ w_vec_normed.T)
         _cross = np.cross(v_vec_normed, w_vec_normed)
-
         if _cross[1] > 0:
             error *= -1
         self.lat_error_queue.append(error)

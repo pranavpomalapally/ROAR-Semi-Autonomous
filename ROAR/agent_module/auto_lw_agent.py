@@ -48,10 +48,10 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # Waypoint Following
         self.waypoints: List[Transform] = []
         self.curr_waypoint_index = 0
-        self.closeness_threshold = 0.2
+        self.closeness_threshold = 0.3
 
         # debug waypoint following
-        f = Path("transforms_3.txt").open('r')
+        f = Path("transforms_1.txt").open('r')
         waypoints_arr = []
         for line in f.readlines():
             x, y, z = line.split(",")
@@ -61,6 +61,9 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             waypoints_arr.append([x, z])
         waypoints_arr = np.array(waypoints_arr)
         self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+        self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
+                                                    "iOS_waypoint_pid_config.json").as_posix()
+        self.controller = WaypointBasedPIDController(agent=self)
 
         buffer = 10
         x_scale = 20
@@ -173,15 +176,20 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.logger.info("WAYPOINT_FOLLOWING step")
         control = VehicleControl()
 
-        self.waypoint_visualize()
         # find next waypoint
-        # next_waypoint, index = self.find_next_waypoint(waypoints_queue=self.waypoints,
-        #                                                curr_index=self.curr_waypoint_index,
-        #                                                curr_transform=self.vehicle.transform,
-        #                                                closeness_threshold=self.closeness_threshold)
-        # self.curr_waypoint_index = index
-        # # waypoint based pid
-        # control = self.controller.run_in_series(next_waypoint=next_waypoint)
+        next_waypoint, index = self.find_next_waypoint(waypoints_queue=self.waypoints,
+                                                       curr_index=self.curr_waypoint_index,
+                                                       curr_transform=self.vehicle.transform,
+                                                       closeness_threshold=self.closeness_threshold)
+
+        self.curr_waypoint_index = index
+        # waypoint based pid
+        control = self.controller.run_in_series(next_waypoint=next_waypoint)
+
+        self.waypoint_visualize(map_data=self.map.map.copy(),
+                                name="waypoint visualization",
+                                next_waypoint_location=next_waypoint.location,
+                                car_location=self.vehicle.transform.location)
         return control
 
     def on_STOP_END_step(self):
@@ -189,14 +197,22 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
 
         return VehicleControl()
 
-    def waypoint_visualize(self, with_car: bool = True):
-        track_map = self.map.map.copy()
-        m = np.zeros(shape=(track_map.shape[0], track_map.shape[1], 3))
-        m[np.where(track_map > 0.9)] = [255, 255, 255]
-        if with_car:
-            coord = self.map.world_loc_to_occu_map_coord(self.vehicle.transform.location)
-            m[coord[1]-2:coord[1]+2, coord[0]-2:coord[0]+2] = [0, 0, 255]
-        cv2.imshow("m", m)
+    def waypoint_visualize(self,
+                           map_data: np.ndarray,
+                           name: str = "waypoint_visualization",
+                           car_location: Optional[Location] = None,
+                           next_waypoint_location: Optional[Location] = None):
+        m = np.zeros(shape=(map_data.shape[0], map_data.shape[1], 3))
+        m[np.where(map_data > 0.9)] = [255, 255, 255]
+        point_size = 2
+        if car_location is not None:
+            coord = self.map.world_loc_to_occu_map_coord(car_location)
+            m[coord[1] - point_size:coord[1] + point_size, coord[0] - point_size:coord[0] + point_size] = [0, 0, 255]
+
+        if next_waypoint_location is not None:
+            coord = self.map.world_loc_to_occu_map_coord(next_waypoint_location)
+            m[coord[1] - point_size:coord[1] + point_size, coord[0] - point_size:coord[0] + point_size] = [0, 255, 0]
+        cv2.imshow(name, m)
         cv2.waitKey(1)
 
     @staticmethod
