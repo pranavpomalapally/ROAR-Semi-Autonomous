@@ -50,7 +50,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # Waypoint Following
         self.waypoints: List[Transform] = []
         self.curr_waypoint_index = 0
-        self.closeness_threshold = 0.3
+        self.closeness_threshold = 0.4
 
         # occupancy grid map
         # point cloud visualization
@@ -68,31 +68,8 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.ransac_n = 3
         self.ransac_itr = 100
 
-        # debug waypoint following
-        self.waypoints = self.load_data("transforms_1.txt")
-        waypoints_arr = np.array([[w.location.x, w.location.z] for w in self.waypoints])
-        filtered = Map.filter_outlier(waypoints_arr, min_distance_btw_points=0.0,
-                                      max_distance_btw_points=0.2)
-        self.logger.info(f"Skipped {len(self.waypoints) - len(filtered)} points")
-        waypoints_arr = filtered
-        self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
-        self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
-        self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
-                                                    "iOS_waypoint_pid_config.json").as_posix()
-        self.controller = WaypointBasedPIDController(agent=self)
-
-        # waypoint map
-        buffer = 10
-        x_scale = 20
-        y_scale = 20
-        x_offset = abs(min(waypoints_arr[:, 0]))
-        y_offset = abs(min(waypoints_arr[:, 1]))
-        width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
-        height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
-        self.map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
-                       x_width=width, y_height=height, buffer=buffer)
-        self.map.update(waypoints_arr)
-
+        self.waypoint_map: Optional[Map] = None
+        self.mode = AutoLWAgentModes.VISUALIZE_TRACK
         # self.occu_map = Map(
         #     x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
         #     x_width=500, y_height=500, buffer=10, name="occupancy map"
@@ -193,6 +170,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
 
     def on_VISUALIZE_TRACK_step(self):
         self.logger.info("VISUALIZE_TRACK step")
+        """
         # take only coordinates that are valid (not initial values) by taking advantage of vehicle height
         self.transform_history = [t for t in self.transform_history if abs(t.location.y) > 0.00001]
 
@@ -203,10 +181,49 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.logger.info("File written to transforms.txt")
         self.visualize_track_data(track_data=data)
         self.waypoints = [t for t in self.transform_history]
+        """
+
+        # debug waypoint following
+        self.waypoints = self.load_data("transforms_1.txt")
+        waypoints_arr = np.array([[w.location.x, w.location.z] for w in self.waypoints])
+        filtered = Map.filter_outlier(waypoints_arr, min_distance_btw_points=0.0,
+                                      max_distance_btw_points=0.2)
+        self.logger.info(f"Skipped {len(self.waypoints) - len(filtered)} points")
+        waypoints_arr = filtered
+        self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
+        self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+        self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
+                                                    "iOS_waypoint_pid_config.json").as_posix()
+        self.controller = WaypointBasedPIDController(agent=self)
+
+        # waypoint map
+        buffer = 10
+        x_scale = 20
+        y_scale = 20
+        x_offset = abs(min(waypoints_arr[:, 0]))
+        y_offset = abs(min(waypoints_arr[:, 1]))
+        width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
+        height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
+        self.waypoint_map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
+                                x_width=width, y_height=height, buffer=buffer)
+        self.waypoint_map.update(waypoints_arr)
         self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
                                                     "iOS_waypoint_pid_config.json").as_posix()
         self.controller = WaypointBasedPIDController(agent=self)
         self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+
+        # find the correct starting waypoint index by finding the closest waypoint to the vehicle
+        closest_dist = 100000
+        closest_index = -1
+        for i in range(len(self.waypoints)):
+            loc = self.waypoints[i].location
+            dist = loc.distance(self.vehicle.transform.location)
+            if dist < closest_dist:
+                closest_index = i
+                closest_dist = dist
+        self.curr_waypoint_index = closest_index
+        self.logger.info(f"Starting at index {self.curr_waypoint_index} -> {self.waypoints[i]}")
+
         return VehicleControl()
 
     def on_WAYPOINT_FOLLOWING_step(self):
@@ -223,7 +240,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # waypoint based pid
         control = self.controller.run_in_series(next_waypoint=next_waypoint)
 
-        self.waypoint_visualize(map_data=self.map.map.copy(),
+        self.waypoint_visualize(map_data=self.waypoint_map.map.copy(),
                                 name="waypoint visualization",
                                 next_waypoint_location=next_waypoint.location,
                                 car_location=self.vehicle.transform.location)
@@ -292,11 +309,11 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         m[np.where(map_data > 0.9)] = [255, 255, 255]
         point_size = 2
         if car_location is not None:
-            coord = self.map.world_loc_to_occu_map_coord(car_location)
+            coord = self.waypoint_map.world_loc_to_occu_map_coord(car_location)
             m[coord[1] - point_size:coord[1] + point_size, coord[0] - point_size:coord[0] + point_size] = [0, 0, 255]
 
         if next_waypoint_location is not None:
-            coord = self.map.world_loc_to_occu_map_coord(next_waypoint_location)
+            coord = self.waypoint_map.world_loc_to_occu_map_coord(next_waypoint_location)
             m[coord[1] - point_size:coord[1] + point_size, coord[0] - point_size:coord[0] + point_size] = [0, 255, 0]
         cv2.imshow(name, m)
         cv2.waitKey(1)
