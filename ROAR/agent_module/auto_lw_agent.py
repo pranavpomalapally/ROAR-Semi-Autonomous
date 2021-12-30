@@ -70,47 +70,55 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
 
         self.waypoint_map: Optional[Map] = None
         self.mode = AutoLWAgentModes.VISUALIZE_TRACK
-        # self.occu_map = Map(
-        #     x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
-        #     x_width=500, y_height=500, buffer=10, name="occupancy map"
-        # )
+        buffer = 10
+        x_scale = 20
+        y_scale = 20
+        x_offset = 100
+        y_offset = 100
+        self.occu_map = Map(
+            x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
+            x_width=3000, y_height=3000, buffer=10, name="occupancy map"
+        )
 
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
         if self.front_rgb_camera.data is not None and self.front_depth_camera.data is not None:
             self.prev_steerings.append(self.vehicle.control.steering)
-            # try:
-            #     pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
-            #                                                                        self.front_rgb_camera.data)
-            #
-            #     pcd = self.filter_ground(pcd=pcd)
-            #     # self.non_blocking_pcd_visualization(pcd=pcd,
-            #     #                                     axis_size=1,
-            #     #                                     should_show_axis=True)
-            #
-            #     points = np.asarray(pcd.points)
-            #     points = np.vstack([points[:, 0], points[:, 2]]).T
-            #     # print(np.min(points, axis=0), np.average(points, axis=0), np.max(points, axis=0))
-            #     self.occu_map.update(points, val=1)
-            #     self.occu_map.visualize(dsize=(200, 200))
-            # except:
-            #     pass
+            try:
+                pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
+                                                                                   self.front_rgb_camera.data)
 
-            if self.mode == AutoLWAgentModes.STOP_INIT:
-                return self.on_STOP_INIT_step()
-            elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
-                return self.on_LANE_FOLLOWING_step(debug=False)
-            elif self.mode == AutoLWAgentModes.STOP_MID:
-                return self.on_STOP_MID_step()
-            elif self.mode == AutoLWAgentModes.VISUALIZE_TRACK:
-                return self.on_VISUALIZE_TRACK_step()
-            elif self.mode == AutoLWAgentModes.WAYPOINT_FOLLOWING:
-                return self.on_WAYPOINT_FOLLOWING_step()
-            elif self.mode == AutoLWAgentModes.STOP_END:
-                return self.on_STOP_END_step()
-            else:
-                self.logger.error(f"Unknown mode detected: {self.mode}")
-                return VehicleControl()
+                pcd = self.filter_ground(pcd)
+                # self.non_blocking_pcd_visualization(pcd=pcd,
+                #                                     axis_size=1,
+                #                                     should_show_axis=True)
+
+                points = np.asarray(pcd.points)
+                points = np.vstack([points[:, 0], points[:, 1]]).T
+
+                self.occu_map.update(points, val=1)
+                m = self.occu_map.map.copy()
+                coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
+                m = m[coord[1]-100:coord[1]+50, coord[0]-50:coord[0]+50]
+                cv2.imshow("m", m)
+            except Exception as e:
+                print(e)
+
+            # if self.mode == AutoLWAgentModes.STOP_INIT:
+            #     return self.on_STOP_INIT_step()
+            # elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
+            #     return self.on_LANE_FOLLOWING_step(debug=False)
+            # elif self.mode == AutoLWAgentModes.STOP_MID:
+            #     return self.on_STOP_MID_step()
+            # elif self.mode == AutoLWAgentModes.VISUALIZE_TRACK:
+            #     return self.on_VISUALIZE_TRACK_step()
+            # elif self.mode == AutoLWAgentModes.WAYPOINT_FOLLOWING:
+            #     return self.on_WAYPOINT_FOLLOWING_step()
+            # elif self.mode == AutoLWAgentModes.STOP_END:
+            #     return self.on_STOP_END_step()
+            # else:
+            #     self.logger.error(f"Unknown mode detected: {self.mode}")
+            #     return VehicleControl()
 
         return VehicleControl()
 
@@ -284,11 +292,13 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             point cloud that only has the ground.
 
         """
+
         points = np.asarray(pcd.points)
         colors = np.asarray(pcd.colors)
         # height and distance filter
-        points_of_interest = np.where((points[:, 2] > max_dist) &
-                                      (points[:, 1] < self.vehicle.transform.location.y + height_threshold))
+        points_of_interest = np.where((points[:, 1] > -2) & (points[:, 2] < 0))
+        # points_of_interest = np.where((points[:, 0] > max_dist) &
+        #                               (points[:, 1] < self.vehicle.transform.location.y + height_threshold))
         points = points[points_of_interest]
         colors = colors[points_of_interest]
         pcd.points = o3d.utility.Vector3dVector(points)
@@ -297,7 +307,8 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                                  ransac_n=ransac_n,
                                                  num_iterations=ransac_itr)
 
-        pcd = pcd.select_by_index(inliers)
+        pcd: o3d.geometry.PointCloud = pcd.select_by_index(inliers)
+        pcd = pcd.voxel_down_sample(0.01)
         return pcd
 
     def waypoint_visualize(self,
@@ -610,6 +621,8 @@ class Map:
         Returns:
             number of points updated
         """
+        print(np.min(points, axis=0), np.max(points, axis=0))
+
         points = self.world_arr_to_occu_map(points)
         self.map = np.zeros(shape=self.map.shape)
         self.map[points[:, 1], points[:, 0]] = val

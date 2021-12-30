@@ -27,8 +27,8 @@ class DepthToPointCloudDetector(Detector):
         """
         # if "depth_image" in kwargs:
         #     return self.old_way(kwargs["depth_image"])
-        # return self.old_way(depth_img=self.agent.front_depth_camera.data.copy())
-        return self.pcd_via_open3d(depth_image, rgb_image=rgb_image)
+        return self.old_way(depth_img=self.agent.front_depth_camera.data.copy())
+        # return self.pcd_via_open3d(depth_image, rgb_image=rgb_image)
 
     def pcd_via_open3d(self, depth_image: np.ndarray, rgb_image: np.ndarray):
         depth_data = depth_image.copy().astype(np.float32) * self.settings.depth_scale_raw
@@ -69,20 +69,46 @@ class DepthToPointCloudDetector(Detector):
         return pcd
 
     def old_way(self, depth_img):
-
+        # cv2.imshow('depth img',depth_img)
+        # print(depth_img.shape) # 256*144
+        # print(f'center: {depth_img[128,72]:.4f} upper middle: {depth_img[0, 72]:.4f}, lower middle: {depth_img[-1, 72]:.4f}')
+        # print(np.max(depth_img), np.min(depth_img))
         coords = np.where(depth_img < self.settings.depth_trunc)  # it will just return all coordinate pairs
         Is = coords[0][::self.settings.depth_image_sample_step_size]
         Js = coords[1][::self.settings.depth_image_sample_step_size]
-        raw_p2d = np.reshape(self._pix2xyz(depth_img=depth_img, i=Is, j=Js),
-                             (3, len(Is))).T  # N x 3
         intrinsic = self.agent.front_depth_camera.intrinsics_matrix
-        cords_xyz_1: np.ndarray = np.linalg.inv(intrinsic) @ raw_p2d.T
-        cords_xyz_1 = np.vstack((cords_xyz_1, np.ones((1, cords_xyz_1.shape[1]))))
-        points = self.agent.vehicle.transform.get_matrix() @ cords_xyz_1
-        points = points.T[:, :3]  # (l_r,f_b,up_down), forward and up vector is inverse
+        ax = intrinsic[0][0]
+        ay = intrinsic[1][1]
+        cx = intrinsic[1][2] # cx and cy flipped because of the rotation
+        cy = intrinsic[0][2]
+        z = []
+        x_over_z = []
+        y_over_z = []
+        for v in range(len(depth_img)):
+            for u in range(len(depth_img[v])):
+                z.append(depth_img[v][u])
+                x_over_z.append((cx - u) / ax)
+                y_over_z.append((cy - v) / ay)
+        z = np.array(z)
+        x_over_z = np.array(x_over_z)
+        y_over_z = np.array(y_over_z)
+        #z = d / np.sqrt(1. + x_over_z ** 2 + y_over_z ** 2)
+        x = x_over_z * z
+        y = y_over_z * z
+        points = np.array([x,y,z])
+        #raw_p2d = np.reshape(self._pix2xyz(depth_img=depth_img, i=Is, j=Js),(3, len(Is))).T  # N x 3
+        #cords_xyz_1: np.ndarray = np.linalg.inv(intrinsic) @ raw_p2d.T
+        #cords_xyz_1 = np.vstack((cords_xyz_1, np.ones((1, cords_xyz_1.shape[1]))))
+        #points = self.agent.vehicle.transform.get_matrix() @ cords_xyz_1
+        points = np.vstack((points, np.ones((1, points.shape[1]))))
+        extrinsic = self.agent.vehicle.transform.get_matrix()
+        points = extrinsic @ points
+        points = points.T[:, :3]
         points[:, 1:] = points[:, 1:] * -1
+        #points = points.T
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
+        #pcd: o3d.geometry.PointCloud = o3d.geometry.PointCloud.create_from_depth_image(depth_img, intrinsic, extrinsic=extrinsic, depth_scale=1.0)
 
         if self.settings.should_down_sample:
             pcd = pcd.voxel_down_sample(self.settings.voxel_down_sample_size)
