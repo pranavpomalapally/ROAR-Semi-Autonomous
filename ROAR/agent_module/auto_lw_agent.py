@@ -17,6 +17,8 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 from datetime import datetime
 import requests
+import open3d as o3d
+from ROAR.perception_module.depth_to_pointcloud_detector import DepthToPointCloudDetector
 
 
 class AutoLWAgentModes(Enum):
@@ -50,38 +52,72 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.curr_waypoint_index = 0
         self.closeness_threshold = 0.3
 
+        # occupancy grid map
+        # point cloud visualization
+        # self.vis = o3d.visualization.Visualizer()
+        # self.vis.create_window(width=500, height=500)
+        # self.pcd = o3d.geometry.PointCloud()
+        # self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
+        # self.points_added = False
+
+        # pointcloud and ground plane detection
+        self.depth2pointcloud = DepthToPointCloudDetector(agent=self)
+        self.max_dist = 1.5
+        self.height_threshold = 1
+        self.ransac_dist_threshold = 0.01
+        self.ransac_n = 3
+        self.ransac_itr = 100
+
         # debug waypoint following
-        f = Path("transforms_1.txt").open('r')
-        waypoints_arr = []
-        for line in f.readlines():
-            x, y, z = line.split(",")
-            x, y, z = float(x), float(y), float(z)
-            l = Location(x=x, y=y, z=z)
-            self.waypoints.append(Transform(location=l))
-            waypoints_arr.append([x, z])
-        waypoints_arr = np.array(waypoints_arr)
+        self.waypoints = self.load_data("transforms_1.txt")
+        waypoints_arr = np.array([[w.location.x, w.location.z] for w in self.waypoints])
+        filtered = Map.filter_outlier(waypoints_arr, min_distance_btw_points=0.0,
+                                      max_distance_btw_points=0.2)
+        self.logger.info(f"Skipped {len(self.waypoints) - len(filtered)} points")
+        waypoints_arr = filtered
+        self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
         self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
         self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
                                                     "iOS_waypoint_pid_config.json").as_posix()
         self.controller = WaypointBasedPIDController(agent=self)
 
+        # waypoint map
         buffer = 10
         x_scale = 20
         y_scale = 20
-
         x_offset = abs(min(waypoints_arr[:, 0]))
         y_offset = abs(min(waypoints_arr[:, 1]))
-
         width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
         height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
         self.map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
                        x_width=width, y_height=height, buffer=buffer)
         self.map.update(waypoints_arr)
 
+        # self.occu_map = Map(
+        #     x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
+        #     x_width=500, y_height=500, buffer=10, name="occupancy map"
+        # )
+
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
         if self.front_rgb_camera.data is not None and self.front_depth_camera.data is not None:
             self.prev_steerings.append(self.vehicle.control.steering)
+            # try:
+            #     pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
+            #                                                                        self.front_rgb_camera.data)
+            #
+            #     pcd = self.filter_ground(pcd=pcd)
+            #     # self.non_blocking_pcd_visualization(pcd=pcd,
+            #     #                                     axis_size=1,
+            #     #                                     should_show_axis=True)
+            #
+            #     points = np.asarray(pcd.points)
+            #     points = np.vstack([points[:, 0], points[:, 2]]).T
+            #     # print(np.min(points, axis=0), np.average(points, axis=0), np.max(points, axis=0))
+            #     self.occu_map.update(points, val=1)
+            #     self.occu_map.visualize(dsize=(200, 200))
+            # except:
+            #     pass
 
             if self.mode == AutoLWAgentModes.STOP_INIT:
                 return self.on_STOP_INIT_step()
@@ -98,6 +134,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             else:
                 self.logger.error(f"Unknown mode detected: {self.mode}")
                 return VehicleControl()
+
         return VehicleControl()
 
     def on_STOP_INIT_step(self):
@@ -196,6 +233,55 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.logger.info("STOP END step")
 
         return VehicleControl()
+
+    @staticmethod
+    def load_data(file_path: str) -> List[Transform]:
+        waypoints = []
+        f = Path(file_path).open('r')
+        for line in f.readlines():
+            x, y, z = line.split(",")
+            x, y, z = float(x), float(y), float(z)
+            l = Location(x=x, y=y, z=z)
+            waypoints.append(Transform(location=l))
+        return waypoints
+
+    def filter_ground(self, pcd: o3d.geometry.PointCloud, max_dist: float = -1, height_threshold=0.1,
+                      ransac_dist_threshold=0.01, ransac_n=3, ransac_itr=100) -> o3d.geometry.PointCloud:
+        """
+        Find ground from point cloud by first selecting points that are below the (car's position + a certain threshold)
+        Then it will take only the points that are less than `max_dist` distance away
+        Then do RANSAC on the resulting point cloud.
+
+        Note that this function assumes that the ground will be the largest plane seen after filtering out everything
+        above the vehicle
+
+        Args:
+            pcd: point cloud to be parsed
+            max_dist: maximum distance
+            height_threshold: additional height padding
+            ransac_dist_threshold: RANSAC distance threshold
+            ransac_n: RANSAC starting number of points
+            ransac_itr: RANSAC number of iterations
+
+        Returns:
+            point cloud that only has the ground.
+
+        """
+        points = np.asarray(pcd.points)
+        colors = np.asarray(pcd.colors)
+        # height and distance filter
+        points_of_interest = np.where((points[:, 2] > max_dist) &
+                                      (points[:, 1] < self.vehicle.transform.location.y + height_threshold))
+        points = points[points_of_interest]
+        colors = colors[points_of_interest]
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+        plane_model, inliers = pcd.segment_plane(distance_threshold=ransac_dist_threshold,
+                                                 ransac_n=ransac_n,
+                                                 num_iterations=ransac_itr)
+
+        pcd = pcd.select_by_index(inliers)
+        return pcd
 
     def waypoint_visualize(self,
                            map_data: np.ndarray,
@@ -411,6 +497,54 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             # is flat or up slope, execute adjusted previous command
             return self.execute_prev_command()
 
+    def non_blocking_pcd_visualization(self, pcd: o3d.geometry.PointCloud,
+                                       should_center=False,
+                                       should_show_axis=False,
+                                       axis_size: float = 1):
+        """
+        Real time point cloud visualization.
+
+        Args:
+            pcd: point cloud to be visualized
+            should_center: true to always center the point cloud
+            should_show_axis: true to show axis
+            axis_size: adjust axis size
+
+        Returns:
+            None
+
+        """
+        points = np.asarray(pcd.points)
+        colors = np.asarray(pcd.colors)
+        if should_center:
+            points = points - np.mean(points, axis=0)
+
+        if self.points_added is False:
+            self.pcd = o3d.geometry.PointCloud()
+            self.pcd.points = o3d.utility.Vector3dVector(points)
+            self.pcd.colors = o3d.utility.Vector3dVector(colors)
+
+            if should_show_axis:
+                self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=axis_size,
+                                                                                          origin=np.mean(points,
+                                                                                                         axis=0))
+                self.vis.add_geometry(self.coordinate_frame)
+            self.vis.add_geometry(self.pcd)
+            self.points_added = True
+        else:
+            # print(np.shape(np.vstack((np.asarray(self.pcd.points), points))))
+            self.pcd.points = o3d.utility.Vector3dVector(points)
+            self.pcd.colors = o3d.utility.Vector3dVector(colors)
+            if should_show_axis:
+                self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=axis_size,
+                                                                                          origin=np.mean(points,
+                                                                                                         axis=0))
+                self.vis.update_geometry(self.coordinate_frame)
+            self.vis.update_geometry(self.pcd)
+
+        self.vis.poll_events()
+        self.vis.update_renderer()
+
 
 class Map:
     def __init__(self,
@@ -460,6 +594,7 @@ class Map:
             number of points updated
         """
         points = self.world_arr_to_occu_map(points)
+        self.map = np.zeros(shape=self.map.shape)
         self.map[points[:, 1], points[:, 0]] = val
         return len(points)
 
@@ -468,3 +603,26 @@ class Map:
         if dsize:
             img = cv2.resize(img, dsize=dsize)
         cv2.imshow(self.name, img)
+
+    @staticmethod
+    def filter_outlier(track,
+                       min_distance_btw_points: float = 0,
+                       max_distance_btw_points: float = 0.2):
+        filtered = []
+        max_num_points_skipped = 0
+        num_points_skipped = 0
+        filtered.append(track[0])
+        for i in range(1, len(track)):
+            x2, z2 = track[i]
+            x1, z1 = filtered[-1]
+            diff_x, diff_z = abs(x2 - x1), abs(z2 - z1)
+            if min_distance_btw_points < diff_x < max_distance_btw_points and min_distance_btw_points < diff_z < max_distance_btw_points:
+                filtered.append([x2, z2])
+                num_points_skipped = 0
+            else:
+                num_points_skipped += 1
+
+            max_num_points_skipped = max(num_points_skipped, max_num_points_skipped)
+
+        filtered = np.array(filtered)
+        return filtered

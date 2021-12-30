@@ -46,18 +46,24 @@ class DepthToPointCloudDetector(Detector):
         intric = self.agent.front_depth_camera.intrinsics_matrix
         intrinsic = o3d.camera.PinholeCameraIntrinsic(width=rgb_data.shape[0],
                                                       height=rgb_data.shape[1],
-                                                      fx=intric[0][0],  # added this hack to flip it
+                                                      fx=-intric[0][0],  # added this hack to flip it
                                                       fy=-intric[1][1],  # added this hack to flip it
                                                       cx=intric[0][2],
                                                       cy=intric[1][2])
-        # extrinsics = self.agent.vehicle.transform.get_matrix()
-        # rot = self.agent.vehicle.transform.rotation
-        # # rot.pitch, rot.yaw, rot.roll
-        # extrinsics[0:3, 0:3] = o3d.geometry.get_rotation_matrix_from_yzx(rotation=
-        #                                                                  np.deg2rad([rot.pitch, rot.yaw, rot.roll]))
+        extrinsics = self.agent.vehicle.transform.get_matrix()
+        rot = self.agent.vehicle.transform.rotation
+        # rot.pitch, rot.yaw, rot.roll
+        extrinsics[0:3, 0:3] = o3d.geometry.get_rotation_matrix_from_xyz(rotation=
+                                                                         np.deg2rad([90+rot.pitch,
+                                                                                     180+rot.yaw,
+                                                                                     rot.roll]))
+        extrinsics[0][3] = self.agent.vehicle.transform.location.x
+        extrinsics[1][3] = self.agent.vehicle.transform.location.y
+        extrinsics[2][3] = self.agent.vehicle.transform.location.z
         pcd: o3d.geometry.PointCloud = o3d.geometry.PointCloud. \
             create_from_rgbd_image(image=rgbd,
-                                   intrinsic=intrinsic)
+                                   intrinsic=intrinsic,
+                                   extrinsic=extrinsics)
         if self.settings.should_down_sample:
             pcd = pcd.voxel_down_sample(self.settings.voxel_down_sample_size)
         return pcd

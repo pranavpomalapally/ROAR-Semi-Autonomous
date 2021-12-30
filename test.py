@@ -20,7 +20,7 @@ class Map:
         self.x_width = x_width
         self.y_height = y_height
         self.buffer = buffer
-        self.map = np.zeros(shape=(self.x_width, self.y_height))
+        self.map = np.zeros(shape=(self.y_height, self.x_width))
 
     def world_loc_to_occu_map_coord(self, loc: Location) -> Tuple[int, int]:
         """
@@ -35,7 +35,7 @@ class Map:
 
         """
         x = int((loc.x + self.x_offset) * self.x_scale) + self.buffer
-        y = int((loc.y + self.y_offset) * self.y_scale) + self.buffer
+        y = int((loc.z + self.y_offset) * self.y_scale) + self.buffer
         return x, y
 
     def world_arr_to_occu_map(self, arr: np.ndarray) -> np.ndarray:
@@ -54,7 +54,7 @@ class Map:
             number of points updated
         """
         points = self.world_arr_to_occu_map(points)
-        self.map[points[:, 0], points[:, 1]] = val
+        self.map[points[:, 1], points[:, 0]] = val
         return len(points)
 
     def visualize(self, dsize: Optional[Tuple] = None):
