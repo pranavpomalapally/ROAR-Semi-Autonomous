@@ -77,8 +77,9 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         y_offset = 100
         self.occu_map = Map(
             x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
-            x_width=3000, y_height=3000, buffer=10, name="occupancy map"
+            x_width=2500, y_height=2500, buffer=10, name="occupancy map"
         )
+        self.m = np.zeros(shape=(self.occu_map.map.shape[0], self.occu_map.map.shape[1], 3))
 
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
@@ -89,18 +90,17 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                                                                    self.front_rgb_camera.data)
 
                 pcd = self.filter_ground(pcd)
-                # self.non_blocking_pcd_visualization(pcd=pcd,
-                #                                     axis_size=1,
-                #                                     should_show_axis=True)
 
                 points = np.asarray(pcd.points)
-                points = np.vstack([points[:, 0], points[:, 1]]).T
+                new_points = np.copy(points)
+
+                points = np.vstack([new_points[:, 0], new_points[:, 2]]).T
 
                 self.occu_map.update(points, val=1)
-                m = self.occu_map.map.copy()
                 coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
-                m = m[coord[1]-100:coord[1]+50, coord[0]-50:coord[0]+50]
-                cv2.imshow("m", m)
+                self.m[np.where(self.occu_map.map == 1)] = [255, 255, 255]
+                self.m[coord[1] - 2:coord[1] + 2, coord[0] - 2:coord[0] + 2] = [0, 0, 255]
+                cv2.imshow("m", self.m)
             except Exception as e:
                 print(e)
 
@@ -178,7 +178,6 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
 
     def on_VISUALIZE_TRACK_step(self):
         self.logger.info("VISUALIZE_TRACK step")
-        """
         # take only coordinates that are valid (not initial values) by taking advantage of vehicle height
         self.transform_history = [t for t in self.transform_history if abs(t.location.y) > 0.00001]
 
@@ -189,14 +188,20 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.logger.info("File written to transforms.txt")
         self.visualize_track_data(track_data=data)
         self.waypoints = [t for t in self.transform_history]
-        """
 
         # debug waypoint following
-        self.waypoints = self.load_data("transforms_1.txt")
+        # self.waypoints = self.load_data("transforms_1.txt")
         waypoints_arr = np.array([[w.location.x, w.location.z] for w in self.waypoints])
         filtered = Map.filter_outlier(waypoints_arr, min_distance_btw_points=0.0,
                                       max_distance_btw_points=0.2)
-        self.logger.info(f"Skipped {len(self.waypoints) - len(filtered)} points")
+        num_skipped_points = len(self.waypoints) - len(filtered)
+        self.logger.info(f"Skipped {num_skipped_points} points")
+        if num_skipped_points > 1000:
+            self.logger.info("Skipped too many points, restarting lane following")
+            self.mode = AutoLWAgentModes.LANE_FOLLOWING
+            self.controller = ImageBasedPIDController(agent=self)
+            self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
+                                                        "iOS_image_pid_config.json").as_posix()
         waypoints_arr = filtered
         self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
         self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
@@ -230,8 +235,8 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                 closest_index = i
                 closest_dist = dist
         self.curr_waypoint_index = closest_index
-        self.logger.info(f"Starting at index {self.curr_waypoint_index} -> {self.waypoints[i]}")
-
+        self.logger.info(f"Starting at index {self.curr_waypoint_index} -> {self.waypoints[closest_index]}")
+        self.start_loc = self.vehicle.transform
         return VehicleControl()
 
     def on_WAYPOINT_FOLLOWING_step(self):
@@ -252,6 +257,10 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                 name="waypoint visualization",
                                 next_waypoint_location=next_waypoint.location,
                                 car_location=self.vehicle.transform.location)
+
+        if self.is_within_start_loc(target_location=self.start_loc.location,
+                                    current_location=self.vehicle.transform.location):
+            self.mode = AutoLWAgentModes.STOP_END
         return control
 
     def on_STOP_END_step(self):
@@ -296,9 +305,8 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         points = np.asarray(pcd.points)
         colors = np.asarray(pcd.colors)
         # height and distance filter
-        points_of_interest = np.where((points[:, 1] > -2) & (points[:, 2] < 0))
-        # points_of_interest = np.where((points[:, 0] > max_dist) &
-        #                               (points[:, 1] < self.vehicle.transform.location.y + height_threshold))
+        # 0 -> left and right | 1 -> up and down | 2 = close and far
+        points_of_interest = np.where((points[:, 1] < 0.3))
         points = points[points_of_interest]
         colors = colors[points_of_interest]
         pcd.points = o3d.utility.Vector3dVector(points)
@@ -621,7 +629,7 @@ class Map:
         Returns:
             number of points updated
         """
-        print(np.min(points, axis=0), np.max(points, axis=0))
+        # print(np.min(points, axis=0), np.max(points, axis=0))
 
         points = self.world_arr_to_occu_map(points)
         self.map = np.zeros(shape=self.map.shape)
