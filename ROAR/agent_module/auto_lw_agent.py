@@ -88,6 +88,10 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             try:
                 pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
                                                                                    self.front_rgb_camera.data)
+                folder_name = Path("./data/pointcloud")
+                folder_name.mkdir(parents=True, exist_ok=True)
+                o3d.io.write_point_cloud((folder_name / f"{datetime.now().strftime('%m_%d_%Y_%H_%M_%S_%f')}.pcd").as_posix(),
+                                         pcd, print_progress=True)
 
                 pcd = self.filter_ground(pcd)
 

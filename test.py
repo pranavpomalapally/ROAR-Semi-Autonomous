@@ -1,10 +1,13 @@
-from pathlib import Path
-from ROAR.utilities_module.data_structures_models import Transform, Location
-import numpy as np
 from typing import Tuple, Optional
+import open3d as o3d
+import os
+from glob import glob
+from pathlib import Path
+import numpy as np
 import cv2
-import plotly.express as px
-
+import matplotlib.pyplot as plt
+from ROAR.utilities_module.data_structures_models import Location
+from tqdm import tqdm
 
 class Map:
     def __init__(self,
@@ -43,6 +46,21 @@ class Map:
         ys = ((arr[:, 1] + self.y_offset) * self.y_scale + self.buffer).astype(int)
         return np.array([xs, ys]).T
 
+    def pcd_to_occu_map(self, pcd: o3d.geometry.PointCloud):
+        points = np.asarray(pcd.points)
+        xs = np.expand_dims(points[:, 0], axis=1)
+        zs = np.expand_dims(points[:, 2], axis=1)
+        arr = np.hstack([xs, zs])
+        return self.world_arr_to_occu_map(arr)
+
+    @staticmethod
+    def extract_xz_points_from_pcd(pcd:o3d.geometry.PointCloud) -> np.ndarray:
+        points = np.asarray(pcd.points)
+        xs = np.expand_dims(points[:, 0], axis=1)
+        zs = np.expand_dims(points[:, 2], axis=1)
+        points = np.hstack([xs, zs])
+        return points
+
     def update(self, points: np.ndarray, val=1) -> int:
         """
 
@@ -61,31 +79,49 @@ class Map:
         img = self.map.copy()
         if dsize:
             img = cv2.resize(img, dsize=dsize)
-        cv2.imshow(self.name, img)
+        plt.imshow(img, cmap='gray')
+        plt.show()
+        # cv2.imshow(self.name, img)
 
+    @staticmethod
+    def moving_average(a, n=3):
+        ret_x = np.cumsum(a[:, 0], dtype=float)
+        ret_z = np.cumsum(a[:, 1], dtype=float)
 
-waypoints = []
-waypoints_arr = []
-# debug waypoint following
-f = Path("transforms_1.txt").open('r')
-for line in f.readlines():
-    x, y, z = line.split(",")
-    x, y, z = float(x), float(y), float(z)
-    l = Location(x=x, y=y, z=z)
-    waypoints.append(Transform(location=l))
-    waypoints_arr.append([x, z])
-waypoints_arr = np.array(waypoints_arr)
+        ret_x[n:] = ret_x[n:] - ret_x[:-n]
+        ret_z[n:] = ret_z[n:] - ret_z[:-n]
 
-buffer = 10
-x_scale = 20
-y_scale = 20
+        ret_x = ret_x[n - 1:] / n
+        ret_z = ret_z[n - 1:] / n
 
-x_offset = abs(min(waypoints_arr[:, 0]))
-y_offset = abs(min(waypoints_arr[:, 1]))
+        return np.array([ret_x, ret_z]).T
 
-width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
-height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
-map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=20, y_scale=20,
-          x_width=width, y_height=height, buffer=buffer)
-map.update(waypoints_arr)
-map.visualize()
+    @staticmethod
+    def find_hyperparam_from_pcd(pcd: o3d.geometry.PointCloud, scale, buffer):
+        x_offset = np.max([abs(np.floor(pcd.get_min_bound()[0])), abs(np.ceil(pcd.get_max_bound()[0]))]).astype(int)
+        y_offset = np.max([abs(np.floor(pcd.get_min_bound()[2])), abs(np.ceil(pcd.get_max_bound()[2]))]).astype(int)
+        x_width = np.ceil((pcd.get_max_bound()[0] + x_offset) * scale + buffer).astype(int)
+        y_height = np.ceil((pcd.get_max_bound()[2] + y_offset) * scale + buffer).astype(int)
+        return x_offset, y_offset, x_width, y_height
+
+    @staticmethod
+    def read_pointclouds(dir_path: Path, voxel_down_sample=0.1) -> o3d.geometry.PointCloud:
+        assert dir_path.exists(), f"{dir_path} does not exist"
+        # load the files
+        pointcloud_folder = Path(dir_path)
+        files = glob(pointcloud_folder.as_posix() + "/*.pcd")
+        files.sort(key=os.path.getmtime)
+        pcd = o3d.geometry.PointCloud()
+        for file in tqdm(files):
+            p = o3d.io.read_point_cloud(file)
+            p_points = np.asarray(p.points)
+            p_colors = np.asarray(p.colors)
+
+            points = np.concatenate((np.asarray(pcd.points), p_points), axis=0)
+            colors = np.concatenate((np.asarray(pcd.colors), p_colors), axis=0)
+
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+
+            pcd = pcd.voxel_down_sample(voxel_down_sample)
+        return pcd
