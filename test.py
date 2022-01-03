@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from ROAR.utilities_module.data_structures_models import Location
 from tqdm import tqdm
 
+
 class Map:
     def __init__(self,
                  x_offset: float, y_offset: float, x_scale: float, y_scale: float,
@@ -46,6 +47,16 @@ class Map:
         ys = ((arr[:, 1] + self.y_offset) * self.y_scale + self.buffer).astype(int)
         return np.array([xs, ys]).T
 
+    def occu_map_to_world(self, point: Tuple[int, int]) -> Tuple[float, float]:
+        x, y = point
+        X = (x - self.buffer) / self.x_scale - self.x_offset
+        Y = (y - self.buffer) / self.y_scale - self.y_offset
+        return X, Y
+
+    def get_all_obstacles_in_world(self, threshold=0.5) -> Tuple[np.ndarray, np.ndarray]:
+        xs, ys = np.where(self.map > threshold)
+        return (xs - self.buffer) / self.x_scale - self.x_offset, (ys - self.buffer) / self.y_scale - self.y_offset
+
     def pcd_to_occu_map(self, pcd: o3d.geometry.PointCloud):
         points = np.asarray(pcd.points)
         xs = np.expand_dims(points[:, 0], axis=1)
@@ -54,7 +65,7 @@ class Map:
         return self.world_arr_to_occu_map(arr)
 
     @staticmethod
-    def extract_xz_points_from_pcd(pcd:o3d.geometry.PointCloud) -> np.ndarray:
+    def extract_xz_points_from_pcd(pcd: o3d.geometry.PointCloud) -> np.ndarray:
         points = np.asarray(pcd.points)
         xs = np.expand_dims(points[:, 0], axis=1)
         zs = np.expand_dims(points[:, 2], axis=1)
