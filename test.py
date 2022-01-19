@@ -136,3 +136,19 @@ class Map:
 
             pcd = pcd.voxel_down_sample(voxel_down_sample)
         return pcd
+
+
+if __name__ == "__main__":
+    import socket
+    import time
+
+    HOST = '192.168.1.32'  # The server's hostname or IP address
+    PORT = 80  # The port used by the server
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((HOST, PORT))
+    # for i in range(10):
+    i = 2048
+    msg = f"T{i}"
+    s.send(msg.encode('utf-8'))
+    print(f"sent: {msg}")
+    time.sleep(0.1)

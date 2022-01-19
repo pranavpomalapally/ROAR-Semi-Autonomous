@@ -4,9 +4,10 @@ from ROAR_iOS.ios_runner import iOSRunner
 from ROAR.configurations.configuration import Configuration as AgentConfig
 from ROAR_iOS.config_model import iOSConfig
 from ROAR_Unity.unity_runner import iOSUnityRunner
-from ROAR.agent_module.forward_only_agent import ForwardOnlyAgent
-from ROAR.agent_module.intel_racing_agent import IntelRacingAgent
-from ROAR.agent_module.auto_lw_agent import AutoLaneFollowingWithWaypointAgent
+# from ROAR.agent_module.forward_only_agent import ForwardOnlyAgent
+# from ROAR.agent_module.intel_racing_agent import IntelRacingAgent
+# from ROAR.agent_module.auto_lw_agent import AutoLaneFollowingWithWaypointAgent
+from ROAR.agent_module.special_agents.pointcloud_recording_agent import PointcloudRecordingAgent
 from ROAR.utilities_module.vehicle_models import Vehicle
 import logging
 import argparse
@@ -145,7 +146,7 @@ if __name__ == '__main__':
                 json.dump(ios_config.dict(), ios_config_file_path.open('w'), indent=4)
                 time.sleep(2)
         if success or args.reconnect is False:
-            agent = AutoLaneFollowingWithWaypointAgent(vehicle=Vehicle(), agent_settings=agent_config, should_init_default_cam=True)
+            agent = PointcloudRecordingAgent(vehicle=Vehicle(), agent_settings=agent_config, should_init_default_cam=True)
             runner = iOSUnityRunner(agent=agent, ios_config=ios_config, is_unity=args.use_unity)
             runner.start_game_loop(auto_pilot=args.auto)
     except Exception as e:
