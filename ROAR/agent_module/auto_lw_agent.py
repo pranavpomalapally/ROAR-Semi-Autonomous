@@ -40,17 +40,20 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.controller = ImageBasedPIDController(agent=self)
 
         # START LOC
+        self.lane_following_start_time = 0
         self.start_loc: Optional[Transform] = None
-        self.start_loc_bound: float = 0.2
+        self.start_loc_bound: float = 0.3  # allowable drift
         self.has_exited_start_loc: bool = False
 
         # STOP Mid step
-        self.ip_addr = "10.0.0.2"
+        self.ip_addr = "192.168.1.7"
 
         # Waypoint Following
         self.waypoints: List[Transform] = []
         self.curr_waypoint_index = 0
         self.closeness_threshold = 0.4
+        self.waypoint_start_time = 0
+        self.wait_time = 200
 
         # occupancy grid map
         # point cloud visualization
@@ -69,7 +72,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         self.ransac_itr = 100
 
         self.waypoint_map: Optional[Map] = None
-        self.mode = AutoLWAgentModes.VISUALIZE_TRACK
+        # self.mode = AutoLWAgentModes.VISUALIZE_TRACK
         buffer = 10
         x_scale = 20
         y_scale = 20
@@ -85,44 +88,47 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         super(AutoLaneFollowingWithWaypointAgent, self).run_step(sensors_data, vehicle)
         if self.front_rgb_camera.data is not None and self.front_depth_camera.data is not None:
             self.prev_steerings.append(self.vehicle.control.steering)
-            try:
-                pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
-                                                                                   self.front_rgb_camera.data)
-                folder_name = Path("./data/pointcloud")
-                folder_name.mkdir(parents=True, exist_ok=True)
-                o3d.io.write_point_cloud((folder_name / f"{datetime.now().strftime('%m_%d_%Y_%H_%M_%S_%f')}.pcd").as_posix(),
-                                         pcd, print_progress=True)
+            # try:
+            #     pcd: o3d.geometry.PointCloud = self.depth2pointcloud.run_in_series(self.front_depth_camera.data,
+            #                                                                        self.front_rgb_camera.data)
+            #     folder_name = Path("./data/pointcloud")
+            #     folder_name.mkdir(parents=True, exist_ok=True)
+            #     o3d.io.write_point_cloud((folder_name / f"{datetime.now().strftime('%m_%d_%Y_%H_%M_%S_%f')}.pcd").as_posix(),
+            #                              pcd, print_progress=True)
+            #
+            #     pcd = self.filter_ground(pcd)
+            #
+            #     points = np.asarray(pcd.points)
+            #     new_points = np.copy(points)
+            #
+            #     points = np.vstack([new_points[:, 0], new_points[:, 2]]).T
+            #
+            #     self.occu_map.update(points, val=1)
+            #     coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
+            #     self.m[np.where(self.occu_map.map == 1)] = [255, 255, 255]
+            #     self.m[coord[1] - 2:coord[1] + 2, coord[0] - 2:coord[0] + 2] = [0, 0, 255]
+            #     cv2.imshow("m", self.m)
+            # except Exception as e:
+            #     print(e)
 
-                pcd = self.filter_ground(pcd)
-
-                points = np.asarray(pcd.points)
-                new_points = np.copy(points)
-
-                points = np.vstack([new_points[:, 0], new_points[:, 2]]).T
-
-                self.occu_map.update(points, val=1)
-                coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
-                self.m[np.where(self.occu_map.map == 1)] = [255, 255, 255]
-                self.m[coord[1] - 2:coord[1] + 2, coord[0] - 2:coord[0] + 2] = [0, 0, 255]
-                cv2.imshow("m", self.m)
-            except Exception as e:
-                print(e)
-
-            # if self.mode == AutoLWAgentModes.STOP_INIT:
-            #     return self.on_STOP_INIT_step()
-            # elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
-            #     return self.on_LANE_FOLLOWING_step(debug=False)
-            # elif self.mode == AutoLWAgentModes.STOP_MID:
-            #     return self.on_STOP_MID_step()
-            # elif self.mode == AutoLWAgentModes.VISUALIZE_TRACK:
-            #     return self.on_VISUALIZE_TRACK_step()
-            # elif self.mode == AutoLWAgentModes.WAYPOINT_FOLLOWING:
-            #     return self.on_WAYPOINT_FOLLOWING_step()
-            # elif self.mode == AutoLWAgentModes.STOP_END:
-            #     return self.on_STOP_END_step()
-            # else:
-            #     self.logger.error(f"Unknown mode detected: {self.mode}")
-            #     return VehicleControl()
+            coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
+            self.m[coord[1] - 2:coord[1] + 2, coord[0] - 2:coord[0] + 2] = [0, 0, 255]
+            cv2.imshow("map", self.m)
+            if self.mode == AutoLWAgentModes.STOP_INIT:
+                return self.on_STOP_INIT_step()
+            elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
+                return self.on_LANE_FOLLOWING_step(debug=False)
+            elif self.mode == AutoLWAgentModes.STOP_MID:
+                return self.on_STOP_MID_step()
+            elif self.mode == AutoLWAgentModes.VISUALIZE_TRACK:
+                return self.on_VISUALIZE_TRACK_step()
+            elif self.mode == AutoLWAgentModes.WAYPOINT_FOLLOWING:
+                return self.on_WAYPOINT_FOLLOWING_step()
+            elif self.mode == AutoLWAgentModes.STOP_END:
+                return self.on_STOP_END_step()
+            else:
+                self.logger.error(f"Unknown mode detected: {self.mode}")
+                return VehicleControl()
 
         return VehicleControl()
 
@@ -131,6 +137,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         error = self.find_error()
         if error is not None:
             self.mode = AutoLWAgentModes.LANE_FOLLOWING
+            self.lane_following_start_time = self.time_counter
             self.start_loc = self.vehicle.transform
         return VehicleControl()
 
@@ -161,7 +168,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                 self.logger.info("LANE_FOLLOWING step -> moved outside of the initial location. "
                                  "Executing Lane Following")
                 self.has_exited_start_loc = True
-        if debug and self.time_counter > 200:
+        if debug and abs(self.time_counter - self.lane_following_start_time) > self.wait_time:
             self.mode = AutoLWAgentModes.STOP_MID
             control = VehicleControl(brake=True, throttle=0, steering=0)
         return control
@@ -178,6 +185,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                                         "iOS_image_pid_config.json").as_posix()
             self.controller = ImageBasedPIDController(agent=self)
             self.mode = AutoLWAgentModes.LANE_FOLLOWING
+            self.lane_following_start_time = self.time_counter
         return VehicleControl()
 
     def on_VISUALIZE_TRACK_step(self):
@@ -197,51 +205,55 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # self.waypoints = self.load_data("transforms_1.txt")
         waypoints_arr = np.array([[w.location.x, w.location.z] for w in self.waypoints])
         filtered = Map.filter_outlier(waypoints_arr, min_distance_btw_points=0.0,
-                                      max_distance_btw_points=0.2)
+                                      max_distance_btw_points=0.4)
         num_skipped_points = len(self.waypoints) - len(filtered)
         self.logger.info(f"Skipped {num_skipped_points} points")
         if num_skipped_points > 1000:
             self.logger.info("Skipped too many points, restarting lane following")
             self.mode = AutoLWAgentModes.LANE_FOLLOWING
+            self.lane_following_start_time = self.time_counter
             self.controller = ImageBasedPIDController(agent=self)
             self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
                                                         "iOS_image_pid_config.json").as_posix()
-        waypoints_arr = filtered
-        self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
-        self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
-        self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
-                                                    "iOS_waypoint_pid_config.json").as_posix()
-        self.controller = WaypointBasedPIDController(agent=self)
+            return VehicleControl()
+        else:
+            waypoints_arr = filtered
+            self.waypoints = [Transform(location=Location(x=w[0], y=0, z=w[1])) for w in waypoints_arr]
+            self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+            self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
+                                                        "iOS_waypoint_pid_config.json").as_posix()
+            self.controller = WaypointBasedPIDController(agent=self)
 
-        # waypoint map
-        buffer = 10
-        x_scale = 20
-        y_scale = 20
-        x_offset = abs(min(waypoints_arr[:, 0]))
-        y_offset = abs(min(waypoints_arr[:, 1]))
-        width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
-        height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
-        self.waypoint_map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
-                                x_width=width, y_height=height, buffer=buffer)
-        self.waypoint_map.update(waypoints_arr)
-        self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
-                                                    "iOS_waypoint_pid_config.json").as_posix()
-        self.controller = WaypointBasedPIDController(agent=self)
-        self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+            # waypoint map
+            buffer = 10
+            x_scale = 20
+            y_scale = 20
+            x_offset = abs(min(waypoints_arr[:, 0]))
+            y_offset = abs(min(waypoints_arr[:, 1]))
+            width = int((max(waypoints_arr[:, 0]) - min(waypoints_arr[:, 0])) * x_scale + x_offset + buffer)
+            height = int((max(waypoints_arr[:, 1]) - min(waypoints_arr[:, 1])) * y_scale + y_offset + buffer)
+            self.waypoint_map = Map(x_offset=x_offset, y_offset=y_offset, x_scale=x_scale, y_scale=y_scale,
+                                    x_width=width, y_height=height, buffer=buffer)
+            self.waypoint_map.update(waypoints_arr)
+            self.agent_settings.pid_config_file_path = (Path(self.agent_settings.pid_config_file_path).parent /
+                                                        "iOS_waypoint_pid_config.json").as_posix()
+            self.controller = WaypointBasedPIDController(agent=self)
+            self.mode = AutoLWAgentModes.WAYPOINT_FOLLOWING
+            self.waypoint_start_time = self.time_counter
 
-        # find the correct starting waypoint index by finding the closest waypoint to the vehicle
-        closest_dist = 100000
-        closest_index = -1
-        for i in range(len(self.waypoints)):
-            loc = self.waypoints[i].location
-            dist = loc.distance(self.vehicle.transform.location)
-            if dist < closest_dist:
-                closest_index = i
-                closest_dist = dist
-        self.curr_waypoint_index = closest_index
-        self.logger.info(f"Starting at index {self.curr_waypoint_index} -> {self.waypoints[closest_index]}")
-        self.start_loc = self.vehicle.transform
-        return VehicleControl()
+            # find the correct starting waypoint index by finding the closest waypoint to the vehicle
+            closest_dist = 100000
+            closest_index = -1
+            for i in range(len(self.waypoints)):
+                loc = self.waypoints[i].location
+                dist = loc.distance(self.vehicle.transform.location)
+                if dist < closest_dist:
+                    closest_index = i
+                    closest_dist = dist
+            self.curr_waypoint_index = closest_index
+            self.logger.info(f"Starting at index {self.curr_waypoint_index} -> {self.waypoints[closest_index]}")
+            self.start_loc = self.vehicle.transform
+            return VehicleControl()
 
     def on_WAYPOINT_FOLLOWING_step(self):
         self.logger.info("WAYPOINT_FOLLOWING step")
@@ -263,7 +275,9 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                 car_location=self.vehicle.transform.location)
 
         if self.is_within_start_loc(target_location=self.start_loc.location,
-                                    current_location=self.vehicle.transform.location):
+                                    current_location=self.vehicle.transform.location) and \
+                abs(self.time_counter - self.waypoint_start_time) > self.wait_time:
+            print(self.time_counter, self.waypoint_start_time, self.wait_time)
             self.mode = AutoLWAgentModes.STOP_END
         return control
 
@@ -423,12 +437,10 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # make rgb and depth into the same shape
         data: np.ndarray = cv2.resize(self.front_rgb_camera.data.copy(),
                                       dsize=(192, 256))
-        # cv2.imshow("rgb_mask", cv2.inRange(data, self.rgb_lower_range, self.rgb_upper_range))
         data = self.rgb2ycbcr(data)
-        # cv2.imshow("ycbcr_mask", cv2.inRange(data, self.ycbcr_lower_range, self.ycbcr_upper_range))
         # find the lane
         error_at_10 = self.find_error_at(data=data,
-                                         y_offset=10,
+                                         y_offset=40,
                                          error_scaling=[
                                              (20, 0.1),
                                              (40, 0.75),
@@ -438,7 +450,7 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
                                              (200, 1)
                                          ])
         error_at_50 = self.find_error_at(data=data,
-                                         y_offset=50,
+                                         y_offset=60,
                                          error_scaling=[
                                              (20, 0.2),
                                              (40, 0.4),
@@ -468,17 +480,17 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
         # mask_red = cv2.inRange(src=data, lowerb=(0, 150, 60), upperb=(250, 240, 140))  # TERRACE RED
         # mask_yellow = cv2.inRange(src=data, lowerb=(0, 130, 0), upperb=(250, 200, 110)) # TERRACE YELLOW
         # mask_red = cv2.inRange(src=data, lowerb=(0, 180, 60), upperb=(250, 240, 140))  # CORY 337 RED
-        # mask_yellow = cv2.inRange(src=data, lowerb=(0, 140, 0), upperb=(250, 200, 80))  # CORY 337 YELLOW
-        mask_blue = cv2.inRange(src=data, lowerb=(60, 70, 120), upperb=(170, 130, 255))  # SHUWEI BLUE
-        mask = mask_blue
+        mask_yellow = cv2.inRange(src=data, lowerb=(0, 140, 0), upperb=(250, 200, 80))  # CORY 337 YELLOW
+        # mask_blue = cv2.inRange(src=data, lowerb=(60, 70, 120), upperb=(170, 130, 255))  # SHUWEI BLUE
+        # mask = mask_blue
         # mask = mask_red | mask_yellow
-
+        mask = mask_yellow
         # cv2.imshow("Lane Mask (Red)", mask_red)
-        # cv2.imshow("Lane Mask (Yellow)", mask_yellow)
+        cv2.imshow("Lane Mask (Yellow)", mask_yellow)
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.erode(mask, kernel, iterations=1)
         mask = cv2.dilate(mask, kernel, iterations=1)
-        cv2.imshow("Lane Mask (mask_blue)", mask)
+        # cv2.imshow("Lane Mask (mask_blue)", mask)
 
         for x in range(0, data.shape[1], 5):
             if mask[y][x] > 0:
