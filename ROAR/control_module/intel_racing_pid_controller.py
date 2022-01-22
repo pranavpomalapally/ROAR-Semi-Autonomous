@@ -20,7 +20,7 @@ class IntelRacingImagePIDController(Controller):
         self.long_error_queue = deque(
             maxlen=self.long_error_deque_length)  # how much error you want to accumulate
         self.target_speed = 7  # target speed that you want to pursue at. m / s
-        self.max_throttle = 0.08  # EXCEED = 0.25, TRAXXAS = 0.07
+        self.max_throttle = 0.075  # EXCEED = 0.25, TRAXXAS = 0.07
         self.curr_max_throttle = self.max_throttle
         self.config = json.load(Path(self.agent.agent_settings.pid_config_file_path).open('r'))
         self.long_config = self.config["longitudinal_controller"]
@@ -114,7 +114,7 @@ class IntelRacingWaypointPIDController(Controller):
         self.long_error_queue = deque(
             maxlen=self.long_error_deque_length)  # this is how much error you want to accumulate
         self.target_speed = 7  # m / s
-        self.max_throttle = 0.08
+        self.max_throttle = 0.075
         self.curr_max_throttle = self.max_throttle
         self.config = json.load(Path(self.agent.agent_settings.pid_config_file_path).open('r'))
         self.long_config = self.config["longitudinal_controller"]

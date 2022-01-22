@@ -114,6 +114,8 @@ class AutoLaneFollowingWithWaypointAgent(Agent):
             coord = self.occu_map.world_loc_to_occu_map_coord(loc=self.vehicle.transform.location)
             self.m[coord[1] - 2:coord[1] + 2, coord[0] - 2:coord[0] + 2] = [0, 0, 255]
             cv2.imshow("map", self.m)
+
+
             if self.mode == AutoLWAgentModes.STOP_INIT:
                 return self.on_STOP_INIT_step()
             elif self.mode == AutoLWAgentModes.LANE_FOLLOWING:
