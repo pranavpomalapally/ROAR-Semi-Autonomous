@@ -1,4 +1,4 @@
-from ROAR.utilities_module.data_structures_models import SensorsData
+from ROAR.utilities_module.data_structures_models import SensorsData, Vector3D
 from ROAR.utilities_module.vehicle_models import Vehicle, VehicleControl
 from ROAR.agent_module.agent import Agent
 from ROAR.utilities_module.data_structures_models import Transform
@@ -268,7 +268,8 @@ class iOSUnityRunner:
             vehicle = self.ios_bridge.convert_vehicle_from_source_to_agent(
                 {
                     "transform": self.veh_state_streamer.transform,
-                    "velocity": self.veh_state_streamer.velocity,
+                    "velocity": Vector3D(x=0, y=self.veh_state_streamer.hall_effect_sensor_velocity, z=0) if
+                                self.ios_config.use_hall_effect_for_spd else self.veh_state_streamer.velocity,
                     "acceleration": self.veh_state_streamer.acceleration
                 }
             )
