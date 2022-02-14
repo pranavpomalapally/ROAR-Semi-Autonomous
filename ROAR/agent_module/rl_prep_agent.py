@@ -18,7 +18,7 @@ import open3d as o3d
 from ROAR.utilities_module.occupancy_map import OccupancyGridMap
 from ROAR.perception_module.depth_to_pointcloud_detector import DepthToPointCloudDetector
 from ROAR.perception_module.ground_plane_detector import GroundPlaneDetector
-
+from collections import deque
 
 class RLPrepAgent(Agent):
     def __init__(self, vehicle: Vehicle, agent_settings: AgentConfig, **kwargs):
@@ -28,12 +28,8 @@ class RLPrepAgent(Agent):
         self.occu_map = OccupancyGridMap(agent=self)
         self.depth_to_pcd = DepthToPointCloudDetector(agent=self)
         self.ground_plane_detector = GroundPlaneDetector(agent=self)
-        # initialize open3d related content
-        # self.vis = o3d.visualization.Visualizer()
-        # self.vis.create_window(width=500, height=500)
-        # self.pcd = o3d.geometry.PointCloud()
-        # self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
-        # self.points_added = False
+
+        self.queue = deque(maxlen=4)
 
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super().run_step(sensors_data, vehicle)
@@ -46,7 +42,19 @@ class RLPrepAgent(Agent):
                 points: np.ndarray = points[inliers]
                 points = points[np.random.choice(points.shape[0], 2000, replace=False)]
                 self.occu_map.update(points)
+                m = self.occu_map.get_map(transform=self.vehicle.transform, view_size=(50, 50))
+
                 self.occu_map.visualize()
+                if self.time_counter % 5 == 0:
+                    self.queue.append(m)
+
+            if len(self.queue) == 4:
+                hori = np.concatenate((self.queue[0],
+                                       self.queue[1],
+                                       self.queue[2],
+                                       self.queue[3]), axis=1)
+                cv2.imshow("hori", hori)
+
         return VehicleControl()
 
     def non_blocking_pcd_visualization(self, pcd: o3d.geometry.PointCloud,
@@ -83,3 +91,6 @@ class RLPrepAgent(Agent):
 
         self.vis.poll_events()
         self.vis.update_renderer()
+
+
+
