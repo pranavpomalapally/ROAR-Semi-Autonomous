@@ -126,7 +126,7 @@ class OccupancyGridMap(Module):
                     world_cords_xy=world_cords_xy)
 
                 occu_cords_x, occu_cords_y = \
-                    self._curr_obstacle_occu_coords[:, 0], self._curr_obstacle_occu_coords[:,1]
+                    self._curr_obstacle_occu_coords[:, 0], self._curr_obstacle_occu_coords[:, 1]
                 # self._map += self._free_prob
                 # self._initialize_map()
                 self._map[occu_cords_y, occu_cords_x] += self._occu_prob
