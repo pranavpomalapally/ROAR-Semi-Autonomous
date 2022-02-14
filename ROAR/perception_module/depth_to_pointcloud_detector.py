@@ -1,3 +1,5 @@
+import time
+
 from ROAR.agent_module.agent import Agent
 from ROAR.perception_module.detector import Detector
 import numpy as np
@@ -71,13 +73,7 @@ class DepthToPointCloudDetector(Detector):
         cords_xyz_1 = np.vstack((cords_xyz_1, np.ones((1, cords_xyz_1.shape[1]))))
         points = self.agent.vehicle.transform.get_matrix() @ cords_xyz_1
         points = points.T[:, :3]
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-
-        if self.settings.should_down_sample:
-            pcd = pcd.voxel_down_sample(self.settings.voxel_down_sample_size)
-        pcd.paint_uniform_color(color=[0, 0, 0])
-        return pcd
+        return points
 
     def save(self, **kwargs):
         pass

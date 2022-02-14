@@ -6,6 +6,8 @@ This agent will demonstrate automatic free space driving using
 4. drive as smooth as possible toward that waypoint
 
 """
+import time
+
 from ROAR.agent_module.agent import Agent
 from ROAR.utilities_module.data_structures_models import SensorsData
 from ROAR.utilities_module.vehicle_models import Vehicle, VehicleControl
@@ -27,37 +29,37 @@ class FreeSpaceAutoAgent(Agent):
         self.depth_to_pcd = DepthToPointCloudDetector(agent=self)
         self.ground_plane_detector = GroundPlaneDetector(agent=self)
         # initialize open3d related content
-        self.vis = o3d.visualization.Visualizer()
-        self.vis.create_window(width=500, height=500)
-        self.pcd = o3d.geometry.PointCloud()
-        self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
-        self.points_added = False
+        # self.vis = o3d.visualization.Visualizer()
+        # self.vis.create_window(width=500, height=500)
+        # self.pcd = o3d.geometry.PointCloud()
+        # self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
+        # self.points_added = False
 
     def run_step(self, sensors_data: SensorsData, vehicle: Vehicle) -> VehicleControl:
         super(FreeSpaceAutoAgent, self).run_step(sensors_data, vehicle)
         if self.front_depth_camera.data is not None and self.front_rgb_camera.data is not None:
-            pcd = self.depth_to_pcd.run_in_series()
-            print(self.vehicle.transform)
+            points = self.depth_to_pcd.run_in_series()
             # points: np.ndarray = np.asarray(pcd.points)
             # self.occu_map.update(points)
             # self.occu_map.visualize()
             # self.non_blocking_pcd_visualization(pcd=pcd, should_center=True,
             #                                     should_show_axis=True, axis_size=10)
             # find plane
-            output = self.ground_plane_detector.run_in_series(point_cloud=pcd)
+            output = self.ground_plane_detector.run_in_series(points=points)
             if output is not None:
-                plane_eq, inliers = output
-                # annotate plane on pcd
-                colors = np.asarray(pcd.colors)
-                colors[inliers] = [0, 0, 1]
-                pcd.colors = o3d.utility.Vector3dVector(colors)
-
-                self.non_blocking_pcd_visualization(pcd=pcd, should_center=True,
-                                                    should_show_axis=True, axis_size=1)
+                # plane_eq, inliers = output
+                inliers = output
+                # # annotate plane on pcd
+                # colors = np.asarray(pcd.colors)
+                # colors[inliers] = [0, 0, 1]
+                # pcd.colors = o3d.utility.Vector3dVector(colors)
+                # self.non_blocking_pcd_visualization(pcd=pcd, should_center=True,
+                #                                     should_show_axis=True, axis_size=1)
                 # get world coords of the ground plane
-                points: np.ndarray = np.asarray(pcd.points)
+                # points: np.ndarray = np.asarray(pcd.points)
                 points: np.ndarray = points[inliers]
                 self.occu_map.update(points)
+
                 self.occu_map.visualize()
         return VehicleControl()
 

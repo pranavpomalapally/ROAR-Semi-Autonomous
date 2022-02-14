@@ -18,6 +18,10 @@ class GroundPlaneDetector(Detector):
         )
 
     def run_in_series(self, **kwargs) -> Optional[Tuple[np.ndarray, List[int]]]:
+        if "points" in kwargs:
+            points = kwargs["points"]
+            ground_locs = np.where(points[:, 1] < np.mean(points[:, 1]))
+            return ground_locs
         if "point_cloud" in kwargs:
             pcd: o3d.geometry.PointCloud = kwargs["point_cloud"]
             # # remove all points that are too tall

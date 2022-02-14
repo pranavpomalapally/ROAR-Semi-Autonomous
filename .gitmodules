@@ -10,3 +10,6 @@
 [submodule "ROAR_iOS"]
 	path = ROAR_iOS
 	url = https://github.com/wuxiaohua1011/ROAR_iOS
+[submodule "ROAR_Junior_Racing"]
+	path = ROAR_Junior_Racing
+	url = https://github.com/augcog/ROAR-Junior-Racing
