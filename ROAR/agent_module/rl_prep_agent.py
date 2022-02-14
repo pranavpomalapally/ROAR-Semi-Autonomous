@@ -19,6 +19,7 @@ from ROAR.utilities_module.occupancy_map import OccupancyGridMap
 from ROAR.perception_module.depth_to_pointcloud_detector import DepthToPointCloudDetector
 from ROAR.perception_module.ground_plane_detector import GroundPlaneDetector
 from collections import deque
+from skimage.morphology import skeletonize
 
 
 class RLPrepAgent(Agent):
@@ -45,6 +46,7 @@ class RLPrepAgent(Agent):
                 self.occu_map.update(points)
                 self.occu_map.visualize()
                 if self.time_counter % 5 == 0:
+                    # add a data every 5 frames
                     self.add_one_dataset()
 
             if len(self.queue) == 4:
@@ -52,7 +54,6 @@ class RLPrepAgent(Agent):
                 for i in range(len(self.queue)):
                     imgs.append(np.concatenate((self.queue[i][0], self.queue[i][1], self.queue[i][2]), axis=0))
                 img = np.concatenate([im for im in imgs], axis=1)
-
                 cv2.imshow("Data Aggregated", img)
 
         return VehicleControl()
@@ -67,24 +68,37 @@ class RLPrepAgent(Agent):
         # vehicle location map
         vehicle_loc_map = np.zeros(occu_map_cropped.shape)
         x, y = vehicle_loc_map.shape[0] - 10, vehicle_loc_map.shape[1]//2
-        vehicle_loc_map[np.where(occu_map_cropped > 0)] = 0.5
+        vehicle_loc_map[np.where(occu_map_cropped > 0)] = 0.2  # comment out to not show occupany map
         vehicle_loc_map[x - 2:x + 2, y - 2:y + 2] = 1
 
         # reward map (higher as you go further forward)
-        all_road_reward = np.where(occu_map_cropped > 0.5)
-        y_coords_in_front_of_car = all_road_reward[0] < 50
-        all_road_reward = all_road_reward[0][y_coords_in_front_of_car], all_road_reward[1][y_coords_in_front_of_car]
-        distances = np.sqrt(np.square(all_road_reward[0] - x) + np.square(all_road_reward[1] - y))
         reward_map = np.zeros(shape=occu_map_cropped.shape)
-        max_dist = np.sqrt((vehicle_loc_map.shape[0] - x) ** 2 + (vehicle_loc_map.shape[1] - y) ** 2)
-        reward_map[all_road_reward] = distances / max_dist
+        all_road_reward_coords = np.where(occu_map_cropped > 0.2)
+        y_coords_in_front_of_car = all_road_reward_coords[0] < 50
+        all_road_reward_coords = all_road_reward_coords[0][y_coords_in_front_of_car], \
+                                 all_road_reward_coords[1][y_coords_in_front_of_car]
+        """
+            |  x  |
+        X   |  x  |
+            |  x  |
+            |  z  |
+               Y
+        """
+
+        # first calculate y directional distance
+        Xs = all_road_reward_coords[0]
+        Xs_reward = np.square(Xs - x)
+        reward_map[all_road_reward_coords] = Xs_reward / max(Xs_reward)
+        # distances = np.sqrt(np.square(all_road_reward_coords[0] - x) + np.square(all_road_reward_coords[1] - y))
+        # max_dist = np.sqrt((vehicle_loc_map.shape[0] - x) ** 2 + (vehicle_loc_map.shape[1] - y) ** 2)
+        # reward_map[all_road_reward_coords] = distances / max_dist
         # add reward map, vehicle location map, and occu map to queue
         self.queue.appendleft((occu_map_cropped, vehicle_loc_map, reward_map))
 
     @staticmethod
     def clean_occu_map(data, kernel_size=(2, 2)):
         kernel = np.ones(kernel_size, np.uint8)
-        erosion = cv2.erode(data, kernel, iterations=3)
+        erosion = cv2.erode(data, kernel, iterations=2)
         dilation = cv2.dilate(erosion, kernel, iterations=1)
         return dilation
 
