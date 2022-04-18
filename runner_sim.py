@@ -6,8 +6,10 @@ from ROAR.agent_module.pure_pursuit_agent import PurePursuitAgent
 from ROAR.configurations.configuration import Configuration as AgentConfig
 import argparse
 from misc.utils import str2bool
-from ROAR.agent_module.michael_pid_agent import PIDAgent
+from ROAR.agent_module.pid_agent import PIDAgent
 from ROAR.agent_module.forward_only_agent import ForwardOnlyAgent
+from ROAR.agent_module.line_following_agent import LineFollowingAgent
+from ROAR.agent_module.rl_depth_e2e_agent import RLDepthE2EAgent
 
 
 def main(args):
@@ -22,10 +24,10 @@ def main(args):
         my_vehicle = carla_runner.set_carla_world()
         agent = ForwardOnlyAgent(vehicle=my_vehicle,
                          agent_settings=agent_config)
-        # agent = PIDAgent(vehicle=my_vehicle,
-        #                     agent_settings=agent_config)
+        agent = PIDAgent(vehicle=my_vehicle,
+                         agent_settings=agent_config)
         carla_runner.start_game_loop(agent=agent,
-                                     use_manual_control=not args.auto,
+                                     use_manual_control= not args.auto,
                                      use_semi_auton_control=True)
 
     except Exception as e:

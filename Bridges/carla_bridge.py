@@ -163,10 +163,14 @@ class CarlaBridge(Bridge):
             self, control: VehicleControl
     ) -> carla.VehicleControl:
         """Converts control to carla.VehicleControl"""
+        if control.brake is True:
+            brake = True
+        else:
+            brake = False
         return carla.VehicleControl(
             throttle=abs(control.throttle),
             steer=control.steering,
-            brake=0,
+            brake=brake,
             hand_brake=False,
             reverse=True if control.throttle < 0 else False,
             manual_gear_shift=False,
